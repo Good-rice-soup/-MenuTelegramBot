@@ -4,7 +4,7 @@ Table of contents:
 
 [ENG](#overview)
 
-[RU](#Обзор)
+[RU](#обзор)
 
 ## Overview:
 
@@ -82,7 +82,7 @@ Custom Scripts: Upon opening the document, there is a request to update/create a
 
 ### 1. Работа с ботом: 
 Доступный функционал:
-- [Создание списков блюд (листов)](####Создание)
+- [Создание списков блюд (листов)](#создание-списков-блюд)
   - [**Красные**]()
   - [Жёлтые]()
   - [Зелёные]()
