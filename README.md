@@ -4,7 +4,7 @@ Contents:
 
 [ENG](https://github.com/miss-riss/-MenuTelegramBot/edit/main/README.md#overview)
 
-[RU](https://github.com/miss-riss/-MenuTelegramBot/edit/main/README.md#Общие)
+[RU](https://github.com/miss-riss/-MenuTelegramBot/edit/main/README.md#Обзор)
 
 ## Overview:
 
@@ -74,7 +74,7 @@ Script for Conversion to a .tex Document: Based on the dish database, the script
 Custom Scripts: Upon opening the document, there is a request to update/create a database dump (with protection against mistakes), after which the dishes and workpieces are resorted alphabetically, ingredient lists and lists of dishes for the bot are updated (see the dish database).
 
 
-## Общие данные:
+## Обзор:
 
 Этот чат-бот создан для облегчения работы повара.
 
