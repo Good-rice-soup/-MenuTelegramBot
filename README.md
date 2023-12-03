@@ -2,9 +2,9 @@
 
 Contents:
 
-[ENG](https://github.com/miss-riss/-MenuTelegramBot/edit/main/README.md#overview)
+[ENG](#overview)
 
-[RU](https://github.com/miss-riss/-MenuTelegramBot/edit/main/README.md#Обзор)
+[RU](#Обзор)
 
 ## Overview:
 
