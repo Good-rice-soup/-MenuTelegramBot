@@ -1,7 +1,9 @@
 import json  # нужна для адекватной работы с массивами при многопользовательском режиме
 import sqlite3 as sq
+from user import User
+from typing import Tuple, List, Mapping
+from typing import Any
 
-import telebot
 from telebot import types
 
 
@@ -156,20 +158,19 @@ class BotFunctions:
 
     # там что-то как-то создаётся жёлтый список
     @staticmethod
-    def get_yellow_list():
-        global list_of_dishes
-        global parameters
+    def get_yellow_list(user: User):
+        # TODO определить тип user_parameters
         dishes = BotFunctions.get_dishes()
-        list_of_dishes = dishes.copy()
+        user.list_of_dishes = dishes.copy()
 
         yellow_dishes = []
         for i in range(len(dishes)):
             flag = 1
             counter = 0
             for k in range(len(dishes[i][1])):
-                if dishes[i][1][k] in parameters[0]:
+                if dishes[i][1][k] in user.parameters[0]:
                     flag = 0
-                if dishes[i][1][k] in parameters[1]:
+                if dishes[i][1][k] in user.parameters[1]:
                     counter += 1
             if flag and (not (counter == len(dishes[i][1]))):
                 yellow_dishes.append(dishes[i])
@@ -269,43 +270,35 @@ class BotFunctions:
 
     # функция обновления состояний на основании айди пользователя
     @staticmethod
-    def select_from_db(params):
-        global user_id
-        global state
-        global switch
-        global yellow_list
-        global green_list
-        global stop_list
-        global list_of_dishes
-        global parameters
-        global list_of_variants
-        global list_of_outputs
-        global iteration
+    def select_from_db(user_id: int) -> User:
 
         with sq.connect('users.db') as conn:
             cur = conn.cursor()
-            print(params)
-            cur.execute(f'SELECT * FROM user_data WHERE user_id == {params}')
+            print(user_id)
+            # TODO переделать * на список полей
+            cur.execute(f'SELECT * FROM user_data WHERE user_id == {user_id}')
 
             a = cur.fetchall()
             print(a)
             a = list(a[0])
 
-        user_id = a[0]
-        state = a[1]
-        switch = a[2]
-        yellow_list = json.loads(a[3])
-        green_list = json.loads(a[4])
-        stop_list = json.loads(a[5])
-        list_of_dishes = json.loads(a[6])
-        parameters = json.loads(a[7])
-        list_of_variants = json.loads(a[8])
-        list_of_outputs = json.loads(a[9])
-        iteration = a[10]
+        return User(a[0],
+                    a[1],
+                    a[2],
+                    json.loads(a[3]),
+                    json.loads(a[4]),
+                    json.loads(a[5]),
+                    json.loads(a[6]),
+                    json.loads(a[7]),
+                    json.loads(a[8]),
+                    json.loads(a[9]),
+                    a[10], )
 
     # получение переменных template и workpiece_template
     @staticmethod
-    def db_connect():
+    def db_connect() -> Tuple[Any, Any]:
+        # TODO разобраться что возвращаем
+        # TODO разбить на get_template и get_workpiece_template
         with sq.connect("recipes.db") as connect:
             cursor = connect.cursor()
 
@@ -321,5 +314,4 @@ class BotFunctions:
             for p in range(len(workpiece_template)):
                 o += f'{p + 1})' + workpiece_template[p] + '\n'
             workpiece_template = o
-
-
+        return template, workpiece_template

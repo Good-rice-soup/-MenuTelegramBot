@@ -1,38 +1,25 @@
 import json  # нужна для адекватной работы с массивами при многопользовательском режиме
 import sqlite3 as sq
-
-import bot_functions as bt
+from bot_functions import BotFunctions as bt
 
 import telebot
-from telebot import types
 
-# идея: сохранение ввода шаблона для списков для частичного редактирования\\потом
-
-# глобальные переменные, важные для всех частей кода
-user_id = 0
-state = 0
-switch = 0
-yellow_list = []
-green_list = []
-stop_list = []
-list_of_dishes = []
-parameters = []
-list_of_variants = []
-list_of_outputs = []
-iteration = 0
+# TODO идея: сохранение ввода шаблона для списков для частичного редактирования\\потом
 
 bot_API = ''
 bot = telebot.TeleBot(bot_API)
 
 
-# стартует бота
-# тут происходит создание записи о пользователе, когда он приходит первый раз, обновление базовых состояний и тд
 @bot.message_handler(commands=['start', '/start', 'Start'])
 def start(message):
-    global state
-    state = 0
-    _id = message.from_user.id
+    """
+    стартует бота
+    тут происходит создание записи о пользователе, когда он приходит первый раз, обновление базовых состояний и тд
+    """
 
+    _id = message.from_user.id
+    user = bt.select_from_db(_id)
+    user.state = 0
     # создание записи о новом пользователе
     with sq.connect('users.db') as conn:
         cur = conn.cursor()
@@ -40,7 +27,7 @@ def start(message):
         result = cur.fetchall()
 
         if result:
-            bt.update_in_db("UPDATE user_data SET state = ? WHERE user_id = ?", (state, _id,))
+            bt.update_in_db("UPDATE user_data SET state = ? WHERE user_id = ?", (user.state, _id,))
         else:
             cur.execute(
                 f"INSERT INTO user_data(user_id, state, switch, yellow_list, green_list, stop_list, list_of_dishes, "
@@ -55,24 +42,18 @@ def start(message):
 # тут обрабатываются все текстовые ответы от пользователя
 @bot.message_handler(content_types=['text'])
 def get_user_message(message):
-    global state
-    global parameters
-    global template
-    global list_of_variants
-    global list_of_outputs
-    global iteration
 
     # обновление состояний в зависимости от айди пользователя
     _id = message.from_user.id
-    bt.select_from_db(_id)
+    user = bt.select_from_db(_id)
 
     # проверка нулевого состояния: защита от случайно введённого текста
-    if state == 0:
+    if user.state == 0:
         bot.send_message(message.chat.id, "Я тут не чтобы болтать с тобой. Используй кнопки или команды, либо вводи "
                                           "данные верно.")
 
     # проверка первого состояния: ввод шаблонов для создания листов
-    elif state == 1:
+    elif user.state == 1:
         # взятие шаблона от пользователя
         parameters = message.text.strip().lower().split('\n')
         # функция введена для визуального уменьшения количества циклов
@@ -91,6 +72,7 @@ def get_user_message(message):
             check_up[i] = check_up[i].strip()
 
         # обработка шаблонов для сравнения с вводом пользователя
+        template, _ = bt.db_connect()
         f = template.lower().split('\n')
         f = bt.strip_func(f).copy()
         if '' in f:
@@ -131,7 +113,7 @@ def get_user_message(message):
 
             else:
                 # обновление состояния, что значит завершение возможности ввода данных
-                state = 0
+                user.state = 0
                 check_up.clear()
 
                 # разбиение ввода на массив из пар: ингридиент и его состояние
@@ -164,8 +146,8 @@ def get_user_message(message):
                                  reply_markup=markup)
 
     # проверка второго состояния: ввод для поиска
-    elif state == 2:
-        # аналогичная состоянию 1 обработка
+    elif user.state == 2:
+        # аналогичному состоянию 1 обработка
         request = message.text.strip().split('\n')
         request = bt.strip_func(request).copy()
         while '' in request:
@@ -173,12 +155,12 @@ def get_user_message(message):
 
         # лист вариантов ответа на случай нескольких вариантов ответа при поиске:
         # блин с яйцом пашот и блин с яйцом пашот и салатом
-        list_of_variants = []
+        user.list_of_variants = []
         # текст сообщения вариантов для выбора (см далее для понимания)
-        list_of_outputs = []
+        user.list_of_outputs = []
         # построчная обработка запроса
         for i in request:
-            # проверка запроса. если есть *, то это поиск по тегу (ингридиенту)
+            # Проверка запроса. Если есть *, то это поиск по тегу (ингридиенту)
             if i[:1] == '*':
                 i = i[1:]
                 # фича поиска по нескольким ингридиентам
@@ -239,7 +221,7 @@ def get_user_message(message):
                     # костыльный способ обработки исключения
                     if "По запросу" in text:
 
-                        list_of_outputs.append(text)
+                        user.list_of_outputs.append(text)
 
                         # внесение конкретных вариантов в массив
                         text = text.split("\n")
@@ -247,17 +229,17 @@ def get_user_message(message):
                         for k in text:
                             if k[:1].isdigit():
                                 u.append(k[2:])
-                        list_of_variants.append(u)
+                        user.list_of_variants.append(u)
 
                     else:
                         bot.send_message(message.chat.id, text, parse_mode='html')
 
-        iteration = 0
+        user.iteration = 0
         # проверка наличия нескольких вариантов ответа
-        if len(list_of_variants) != 0:
+        if len(user.list_of_variants) != 0:
             # регистрация следующего шага
             bot.register_next_step_handler(message, get_answer)
-            bot.send_message(message.chat.id, list_of_outputs[iteration])
+            bot.send_message(message.chat.id, user.list_of_outputs[user.iteration])
 
         else:
             markup = bt.markup_func(4)
@@ -267,20 +249,18 @@ def get_user_message(message):
 
     # функция обновляет состояний конкретного пользователя
     bt.update_in_db("UPDATE user_data SET state = ?, parameters = ?, list_of_variants = ?, list_of_outputs = ?, "
-                 "iteration = ? WHERE user_id = ?",
-                 (state, json.dumps(parameters), json.dumps(list_of_variants), json.dumps(list_of_outputs), iteration,
-                  _id,))
+                    "iteration = ? WHERE user_id = ?",
+                    (user.state, json.dumps(user.parameters), json.dumps(user.list_of_variants),
+                     json.dumps(user.list_of_outputs), user.iteration,
+                     _id,))
 
 
 # функция переспроса
 def get_answer(message):
-    global list_of_variants
-    global list_of_outputs
-    global iteration
 
     # обновление состояний по айди пользователя
     _id = message.from_user.id
-    bt.select_from_db(_id)
+    user = bt.select_from_db(_id)
 
     # проверка на адекватность
     choice = message.text.strip()
@@ -290,7 +270,7 @@ def get_answer(message):
 
     else:
         # вторая проверка на адекватность
-        if (int(choice) > len(list_of_variants[iteration])) or (int(choice) == 0):
+        if (int(choice) > len(user.list_of_variants[user.iteration])) or (int(choice) == 0):
             bot.send_message(message.chat.id, "Тут нет такого номера -_-")
             bot.register_next_step_handler(message, get_answer)
 
@@ -299,7 +279,7 @@ def get_answer(message):
             with sq.connect("recipes.db") as con:
                 cur = con.cursor()
                 cur.execute(f"SELECT name_of_dish, ingredients, comments FROM dishes WHERE name_of_dish == "
-                            f"'{list_of_variants[iteration][int(choice) - 1]}'")
+                            f"'{user.list_of_variants[user.iteration][int(choice) - 1]}'")
 
                 y = cur.fetchall()
 
@@ -319,9 +299,9 @@ def get_answer(message):
             bot.send_message(message.chat.id, text, parse_mode='html')
 
             # проверяем, все ли спорные блины мы уточнили
-            if iteration != (len(list_of_outputs) - 1):
-                iteration += 1
-                bot.send_message(message.chat.id, list_of_outputs[iteration])
+            if user.iteration != (len(user.list_of_outputs) - 1):
+                user.iteration += 1
+                bot.send_message(message.chat.id, user.list_of_outputs[user.iteration])
                 bot.register_next_step_handler(message, get_answer)
 
             else:
@@ -332,42 +312,32 @@ def get_answer(message):
 
     # обновление состояний
     bt.update_in_db("UPDATE user_data SET list_of_variants = ?, list_of_outputs = ?, iteration = ? WHERE user_id = ?",
-                 (json.dumps(list_of_variants), json.dumps(list_of_outputs), iteration, _id,))
+                    (json.dumps(user.list_of_variants), json.dumps(user.list_of_outputs), user.iteration, _id,))
 
 
 # функция всех реакций через кнопки
 @bot.callback_query_handler(func=lambda callback: True)
 def callback_message(callback):
-    global parameters
-    global workpiece_template
-    global template
-    global list_of_dishes
-    global green_list
-    global yellow_list
-    global stop_list
-    global state
-    global switch
-
     # обновление состояний по айди пользователя
     _id = callback.from_user.id
-    bt.select_from_db(_id)
+    user = bt.select_from_db(_id)
 
     # далее все возыращающиеся данные для удобства разбиты на кейсы
     if callback.data == "case_1":
         # кейс введения данных для списка
 
-        if (parameters == []) or switch:
+        if (user.parameters == []) or user.switch:
             # проверка на создание первых списков или их пересоздание
 
-            if switch:
+            if user.switch:
                 # пересоздание списка, а точнее новый ввод данных для них
-                green_list = []
-                yellow_list = []
-                stop_list = []
-                parameters = []
-                list_of_dishes = []
-                switch = 0
-                state = 1
+                user.green_list = []
+                user.yellow_list = []
+                user.stop_list = []
+                user.parameters = []
+                user.list_of_dishes = []
+                user.switch = 0
+                user.state = 1
                 markup = bt.markup_func(3)
 
                 bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
@@ -377,8 +347,8 @@ def callback_message(callback):
 
             else:
                 # создание первого списка
-                state = 1
-                switch = 0
+                user.state = 1
+                user.switch = 0
                 markup = bt.markup_func(3)
 
                 bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
@@ -388,8 +358,8 @@ def callback_message(callback):
 
         else:
             # есть предыдущие данные, и мы хотим понять, что с ними делать
-            state = 0
-            switch = 1
+            user.state = 0
+            user.switch = 1
             markup = bt.markup_func(5)
 
             bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
@@ -398,35 +368,35 @@ def callback_message(callback):
 
     elif callback.data == 'case_2':
         # кейс создания зелёного листа
-        if not parameters:
-            # обработка ошибки. после введения многопользовательского режма её появление возможно только при
+        if not user.parameters:
+            # Обработка ошибки. После введения многопользовательского режма её появление возможно только при
             # повреждении базы данных
-            state = 1
+            user.state = 1
 
             bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
             bot.send_message(callback.message.chat.id, "Я не могу это сделать, так как у меня нет данных (возможно "
                                                        "что-то случилось на сервере и я забыл их). Отправь их ещё раз, "
                                                        "пожалуйста.")
         else:
-            if not green_list:
+            if not user.green_list:
                 # проверка существования зелёного листа
 
                 bot.send_message(callback.message.chat.id,
                                  "-----------------------------------------------------------")
 
                 # проверка существования массива блюд
-                if not list_of_dishes:
-                    list_of_dishes = bt.get_dishes()
+                if not user.list_of_dishes:
+                    user.list_of_dishes = bt.get_dishes()
 
                 # создание зелёного листа на основе ввода пользователя
                 green_list = []
-                for i in range(len(list_of_dishes)):
+                for i in range(len(user.list_of_dishes)):
                     flag = 1
-                    for k in range(len(list_of_dishes[i][1])):
-                        if list_of_dishes[i][1][k] not in parameters[1]:
+                    for k in range(len(user.list_of_dishes[i][1])):
+                        if user.list_of_dishes[i][1][k] not in user.parameters[1]:
                             flag = 0
                     if flag:
-                        green_list.append(list_of_dishes[i])
+                        green_list.append(user.list_of_dishes[i])
 
                 # преобразование в текст
                 text = '🟩 Зелёный лист:\n'
@@ -445,9 +415,9 @@ def callback_message(callback):
                                  "-----------------------------------------------------------")
 
                 text = '🟩 Зелёный лист:\n'
-                green_list.sort()
-                for i in range(len(green_list)):
-                    text += f'{i + 1})' + green_list[i][0] + '.\n'
+                user.green_list.sort()
+                for i in range(len(user.green_list)):
+                    text += f'{i + 1})' + user.green_list[i][0] + '.\n'
 
                 markup = bt.markup_func(1)
 
@@ -457,32 +427,32 @@ def callback_message(callback):
     elif callback.data == 'case_3':
         # кейс создания стоп листа
 
-        if not parameters:
+        if not user.parameters:
             # обработка аналогичная второму кейсу
-            state = 1
+            user.state = 1
 
             bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
             bot.send_message(callback.message.chat.id, "Я не могу это сделать, так как у меня нет данных (возможно "
                                                        "что-то случилось на сервере и я забыл их). Отправь их ещё раз, "
                                                        "пожалуйста.")
         else:
-            if not stop_list:
+            if not user.stop_list:
                 # аналогичная проверка всего, как и во втором кейсе
 
                 bot.send_message(callback.message.chat.id,
                                  "-----------------------------------------------------------")
 
-                if not list_of_dishes:
-                    list_of_dishes = bt.get_dishes()
+                if not user.list_of_dishes:
+                    user.list_of_dishes = bt.get_dishes()
 
                 stop_list = []
-                for i in range(len(list_of_dishes)):
+                for i in range(len(user.list_of_dishes)):
                     flag = 0
-                    for k in range(len(list_of_dishes[i][1])):
-                        if list_of_dishes[i][1][k] in parameters[0]:
+                    for k in range(len(user.list_of_dishes[i][1])):
+                        if user.list_of_dishes[i][1][k] in user.parameters[0]:
                             flag = 1
                     if flag:
-                        stop_list.append(list_of_dishes[i])
+                        stop_list.append(user.list_of_dishes[i])
 
                 text = '🟥 Стоп лист:\n'
                 stop_list.sort()
@@ -500,9 +470,9 @@ def callback_message(callback):
                                  "-----------------------------------------------------------")
 
                 text = '🟥 Стоп лист:\n'
-                stop_list.sort()
-                for i in range(len(stop_list)):
-                    text += f'{i + 1})' + stop_list[i][0] + '.\n'
+                user.stop_list.sort()
+                for i in range(len(user.stop_list)):
+                    text += f'{i + 1})' + user.stop_list[i][0] + '.\n'
 
                 markup = bt.markup_func(1)
 
@@ -511,22 +481,22 @@ def callback_message(callback):
 
     elif callback.data == 'case_4':
         # кейс создания жёлтого листа
-        if not parameters:
+        if not user.parameters:
             # всё то же самое
-            state = 1
+            user.state = 1
 
             bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
             bot.send_message(callback.message.chat.id, "Я не могу это сделать, так как у меня нет данных (возможно "
                                                        "что-то случилось на сервере и я забыл их). Отправь их ещё раз, "
                                                        "пожалуйста.")
         else:
-            if not yellow_list:
+            if not user.yellow_list:
 
                 bot.send_message(callback.message.chat.id,
                                  "-----------------------------------------------------------")
 
                 # создание жёлтого листа в функции
-                a = bt.get_yellow_list()
+                a = bt.get_yellow_list(user)
                 yellow_list = a.copy()
                 a.clear()
 
@@ -546,9 +516,9 @@ def callback_message(callback):
                                  "-----------------------------------------------------------")
 
                 text = '🟨 Жёлтый лист:\n'
-                yellow_list.sort()
-                for i in range(len(yellow_list)):
-                    text += f'{i + 1})' + yellow_list[i][0] + '.\n'
+                user.yellow_list.sort()
+                for i in range(len(user.yellow_list)):
+                    text += f'{i + 1})' + user.yellow_list[i][0] + '.\n'
 
                 markup = bt.markup_func(1)
 
@@ -560,12 +530,12 @@ def callback_message(callback):
 
         bot.send_message(callback.message.chat.id, "-----------------------------------------------------------")
 
-        green_list = []
-        yellow_list = []
-        stop_list = []
-        parameters = []
-        list_of_dishes = []
-        state = 1
+        user.green_list = []
+        user.yellow_list = []
+        user.stop_list = []
+        user.parameters = []
+        user.list_of_dishes = []
+        user.state = 1
         markup = bt.markup_func(3)
 
         bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
@@ -576,7 +546,7 @@ def callback_message(callback):
         # кейс "нового старта"
         bot.send_message(callback.message.chat.id, "-----------------------------------------------------------")
 
-        state = 0
+        user.state = 0
         markup = bt.markup_func(2)
         bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
         bot.send_message(callback.message.chat.id, 'Привет, ты знаешь, зачем ты тут.', reply_markup=markup)
@@ -617,7 +587,7 @@ def callback_message(callback):
     elif callback.data == 'case_8':
         # кейс поиска
         bot.send_message(callback.message.chat.id, "-----------------------------------------------------------")
-        state = 2
+        user.state = 2
 
         markup = bt.markup_func(6)
         bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
@@ -625,6 +595,7 @@ def callback_message(callback):
                          reply_markup=markup)
 
     elif callback.data == 'case_9':
+        template, _ = bt.db_connect()
         # кейс отправки шаблона
         markup = bt.markup_func(4)
         bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
@@ -638,7 +609,7 @@ def callback_message(callback):
 
     elif callback.data == 'case_11':
         # кейс выбора первого листа для печати
-        switch = 0
+        user.switch = 0
         markup = bt.markup_func(0)
         bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
         bot.send_message(callback.message.chat.id, "Понял тебя. Какой лист тебе нужен?",
@@ -653,17 +624,19 @@ def callback_message(callback):
 
     elif callback.data == 'case_13':
         # кейс с шаблоном заготовок
+        _, workpiece_template = bt.db_connect()
         markup = bt.markup_func(4)
         bot.edit_message_text(callback.message.text, callback.message.chat.id, callback.message.message_id)
         bot.send_message(callback.message.chat.id, workpiece_template, reply_markup=markup)
 
     # обновление базы данных
     bt.update_in_db("UPDATE user_data SET state = ?, switch = ?, yellow_list = ?, green_list = ?, stop_list = ?, "
-                 "list_of_dishes = ?, parameters = ?, list_of_variants = ?, list_of_outputs = ?, iteration = ? "
-                 "WHERE user_id = ?",
-                 (state, switch, json.dumps(yellow_list), json.dumps(green_list), json.dumps(stop_list),
-                  json.dumps(list_of_dishes), json.dumps(parameters), json.dumps(list_of_variants),
-                  json.dumps(list_of_outputs), iteration, _id,))
+                    "list_of_dishes = ?, parameters = ?, list_of_variants = ?, list_of_outputs = ?, iteration = ? "
+                    "WHERE user_id = ?",
+                    (user.state, user.switch, json.dumps(user.yellow_list), json.dumps(user.green_list),
+                     json.dumps(user.stop_list),
+                     json.dumps(user.list_of_dishes), json.dumps(user.parameters), json.dumps(user.list_of_variants),
+                     json.dumps(user.list_of_outputs), user.iteration, _id,))
 
 
 # бесконечная работа бота
